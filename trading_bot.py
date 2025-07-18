@@ -212,28 +212,36 @@ class TradingBot:
             else:
                 self.close_long_positions(trade.symbol)
             
-            # Prepare order parameters
+            # Calculate quantity using 1/4 of balance
+            trade.quantity = self._calculate_quantity_with_balance_division(trade.symbol)
+            
+            # Get current market price for limit order
+            ticker = self.client.futures_symbol_ticker(symbol=trade.symbol)
+            current_price = float(ticker['price'])
+            
+            # Set limit price with small buffer (0.1% better than market)
+            if trade.side == OrderSide.BUY:
+                limit_price = current_price * 0.999  # Buy slightly below market
+            else:
+                limit_price = current_price * 1.001  # Sell slightly above market
+            
+            # Round price to appropriate decimals
+            limit_price = round(limit_price, 2)
+            trade.price = limit_price
+            trade.order_type = OrderType.LIMIT  # Force all orders to be limit
+            
+            # Prepare order parameters - always use LIMIT orders
             order_params = {
                 'symbol': trade.symbol,
                 'side': trade.side.value,
-                'type': trade.order_type.value,
+                'type': 'LIMIT',
                 'quantity': trade.quantity,
+                'price': limit_price,
+                'timeInForce': 'GTC',
                 'newClientOrderId': trade.client_order_id
             }
             
-            # Add price for limit orders
-            if trade.order_type in [OrderType.LIMIT, OrderType.STOP_LIMIT, OrderType.TAKE_PROFIT_LIMIT]:
-                if not trade.price:
-                    raise Exception("Price required for limit orders")
-                order_params['price'] = trade.price
-            
-            # Add stop price for stop orders
-            if trade.order_type in [OrderType.STOP_MARKET, OrderType.STOP_LIMIT]:
-                if not trade.stop_price:
-                    raise Exception("Stop price required for stop orders")
-                order_params['stopPrice'] = trade.stop_price
-            
-            # Execute main order
+            # Execute main order as LIMIT
             order = self.client.futures_create_order(**order_params)
             
             # Update trade record
@@ -246,9 +254,9 @@ class TradingBot:
             if trade.status == OrderStatus.FILLED:
                 position = self.update_position(trade)
                 
-                # Set up stop loss and take profit orders
+                # Set up stop loss and take profit orders using limit orders
                 if position and (self.settings.enable_stop_loss or self.settings.enable_take_profit):
-                    self._setup_stop_loss_take_profit(position, stop_loss, take_profit)
+                    self._setup_stop_loss_take_profit_limit(position, stop_loss, take_profit)
             
             db.session.commit()
             
@@ -286,12 +294,21 @@ class TradingBot:
             ).all()
             
             for position in positions:
-                # Create sell order to close position
+                # Get current market price for limit order
+                ticker = self.client.futures_symbol_ticker(symbol=symbol)
+                current_price = float(ticker['price'])
+                
+                # Create sell limit order to close position (slightly better than market)
+                close_price = current_price * 1.001  # Sell slightly above market
+                close_price = round(close_price, 2)
+                
                 order = self.client.futures_create_order(
                     symbol=symbol,
                     side='SELL',
-                    type='MARKET',
-                    quantity=position.quantity
+                    type='LIMIT',
+                    quantity=position.quantity,
+                    price=close_price,
+                    timeInForce='GTC'
                 )
                 
                 position.status = PositionStatus.CLOSED
@@ -312,12 +329,21 @@ class TradingBot:
             ).all()
             
             for position in positions:
-                # Create buy order to close position
+                # Get current market price for limit order
+                ticker = self.client.futures_symbol_ticker(symbol=symbol)
+                current_price = float(ticker['price'])
+                
+                # Create buy limit order to close position (slightly better than market)
+                close_price = current_price * 0.999  # Buy slightly below market
+                close_price = round(close_price, 2)
+                
                 order = self.client.futures_create_order(
                     symbol=symbol,
                     side='BUY',
-                    type='MARKET',
-                    quantity=position.quantity
+                    type='LIMIT',
+                    quantity=position.quantity,
+                    price=close_price,
+                    timeInForce='GTC'
                 )
                 
                 position.status = PositionStatus.CLOSED
@@ -560,6 +586,133 @@ class TradingBot:
                 
         except Exception as e:
             logger.error(f"Error calculating take profit price: {str(e)}")
+            return None
+    
+    def _calculate_quantity_with_balance_division(self, symbol):
+        """Calculate quantity using 1/4 of available balance"""
+        try:
+            # Get account balance
+            account = self.client.futures_account()
+            available_balance = float(account['availableBalance'])
+            
+            # Use 1/4 of the available balance
+            quarter_balance = available_balance / 4
+            
+            # Get current price to calculate quantity
+            ticker = self.client.futures_symbol_ticker(symbol=symbol)
+            current_price = float(ticker['price'])
+            
+            # Calculate quantity based on quarter balance
+            quantity = quarter_balance / current_price
+            
+            # Get trading pair to validate quantity
+            trading_pair = self._get_trading_pair(symbol)
+            if trading_pair:
+                quantity = self._validate_quantity(quantity, trading_pair)
+            else:
+                # Default minimum quantity if no trading pair found
+                quantity = max(quantity, 0.001)
+            
+            logger.info(f"Calculated quantity for {symbol}: {quantity} (using 1/4 balance: ${quarter_balance:.2f})")
+            return quantity
+            
+        except Exception as e:
+            logger.error(f"Error calculating quantity with balance division: {str(e)}")
+            # Fallback to default quantity
+            return self.settings.default_quantity if self.settings else 0.01
+    
+    def _setup_stop_loss_take_profit_limit(self, position, stop_loss=None, take_profit=None):
+        """Set up stop loss and take profit orders using LIMIT orders only"""
+        try:
+            entry_price = position.entry_price
+            
+            # Set up stop loss with limit order
+            if self.settings.enable_stop_loss:
+                sl_price = stop_loss if stop_loss else self._calculate_stop_loss_price(entry_price, position.side)
+                sl_order = self._create_stop_loss_limit_order(position, sl_price)
+                if sl_order:
+                    position.stop_loss_price = sl_price
+                    position.stop_loss_order_id = sl_order['orderId']
+            
+            # Set up take profit with limit order
+            if self.settings.enable_take_profit:
+                tp_price = take_profit if take_profit else self._calculate_take_profit_price(entry_price, position.side)
+                tp_order = self._create_take_profit_limit_order(position, tp_price)
+                if tp_order:
+                    position.take_profit_price = tp_price
+                    position.take_profit_order_id = tp_order['orderId']
+            
+            db.session.commit()
+            
+        except Exception as e:
+            logger.error(f"Failed to set up stop loss/take profit with limit orders: {str(e)}")
+    
+    def _create_stop_loss_limit_order(self, position, stop_price):
+        """Create stop loss order using STOP_LIMIT instead of STOP_MARKET"""
+        try:
+            # Opposite side for closing position
+            side = 'SELL' if position.side == OrderSide.BUY else 'BUY'
+            
+            # For limit orders, we need both stop price and limit price
+            # Set limit price slightly worse than stop price to ensure execution
+            if side == 'SELL':
+                limit_price = stop_price * 0.999  # Sell limit slightly below stop
+            else:
+                limit_price = stop_price * 1.001  # Buy limit slightly above stop
+            
+            limit_price = round(limit_price, 2)
+            stop_price = round(stop_price, 2)
+            
+            order = self.client.futures_create_order(
+                symbol=position.symbol,
+                side=side,
+                type='STOP_LIMIT',
+                quantity=position.quantity,
+                price=limit_price,
+                stopPrice=stop_price,
+                timeInForce='GTC',
+                newClientOrderId=f"SL_{position.id}_{str(uuid.uuid4())[:8]}"
+            )
+            
+            logger.info(f"Stop loss LIMIT order created: {order['orderId']} at stop {stop_price}, limit {limit_price}")
+            return order
+            
+        except Exception as e:
+            logger.error(f"Failed to create stop loss limit order: {str(e)}")
+            return None
+    
+    def _create_take_profit_limit_order(self, position, take_profit_price):
+        """Create take profit order using TAKE_PROFIT_LIMIT instead of TAKE_PROFIT_MARKET"""
+        try:
+            # Opposite side for closing position
+            side = 'SELL' if position.side == OrderSide.BUY else 'BUY'
+            
+            # For limit orders, we need both stop price and limit price
+            # Set limit price slightly better than stop price to ensure good execution
+            if side == 'SELL':
+                limit_price = take_profit_price * 1.001  # Sell limit slightly above stop
+            else:
+                limit_price = take_profit_price * 0.999  # Buy limit slightly below stop
+            
+            limit_price = round(limit_price, 2)
+            take_profit_price = round(take_profit_price, 2)
+            
+            order = self.client.futures_create_order(
+                symbol=position.symbol,
+                side=side,
+                type='TAKE_PROFIT_LIMIT',
+                quantity=position.quantity,
+                price=limit_price,
+                stopPrice=take_profit_price,
+                timeInForce='GTC',
+                newClientOrderId=f"TP_{position.id}_{str(uuid.uuid4())[:8]}"
+            )
+            
+            logger.info(f"Take profit LIMIT order created: {order['orderId']} at stop {take_profit_price}, limit {limit_price}")
+            return order
+            
+        except Exception as e:
+            logger.error(f"Failed to create take profit limit order: {str(e)}")
             return None
 
 # Global bot instance

@@ -8,6 +8,12 @@ This is a Flask-based trading bot that receives webhook signals from TradingView
 
 Preferred communication style: Simple, everyday language.
 
+### Trading Strategy Preferences (Updated: 2025-07-18)
+- **Position Sizing**: Use 1/4 of available balance for each trade entry
+- **Order Types**: All orders must be LIMIT orders (never MARKET orders)
+- **Position Management**: Close all opposite positions before opening new ones
+- **Stop Loss/Take Profit**: Use STOP_LIMIT and TAKE_PROFIT_LIMIT orders only
+
 ## System Architecture
 
 ### Backend Architecture
