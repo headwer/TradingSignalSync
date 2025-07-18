@@ -13,19 +13,23 @@ Preferred communication style: Simple, everyday language.
 ### Backend Architecture
 - **Framework**: Flask web application with SQLAlchemy ORM
 - **Database**: SQLite by default (configurable via DATABASE_URL environment variable)
-- **API Integration**: Binance API client for trade execution
+- **API Integration**: Binance Futures API client for trade execution
 - **Webhook Processing**: RESTful endpoint for TradingView signals
+- **Advanced Features**: Stop-loss/take-profit automation, multiple trading pairs, analytics
 
 ### Frontend Architecture
 - **Template Engine**: Jinja2 templates with Bootstrap 5 dark theme
 - **Styling**: Custom CSS with Font Awesome icons
 - **JavaScript**: Vanilla JS for real-time updates and dashboard interactions
 - **Responsive Design**: Bootstrap-based responsive layout
+- **New Pages**: Analytics dashboard, trading pairs management
 
 ### Database Schema
-- **Trade**: Records trade execution history with status tracking
-- **Position**: Tracks open/closed positions with P&L calculations
-- **BotSettings**: Stores API credentials and bot configuration
+- **Trade**: Records trade execution history with advanced order types and status tracking
+- **Position**: Tracks open/closed positions with P&L calculations and stop-loss/take-profit prices
+- **BotSettings**: Stores API credentials, bot configuration, and risk management settings
+- **TradingPair**: Manages multiple trading pairs with their specifications
+- **TradingAnalytics**: Stores performance metrics and trading statistics
 
 ## Key Components
 
@@ -36,22 +40,30 @@ Preferred communication style: Simple, everyday language.
 - ProxyFix middleware for deployment compatibility
 
 ### Trading Bot (trading_bot.py)
-- Binance API client wrapper with error handling
+- Binance Futures API client wrapper with error handling
 - Database-driven configuration management
-- Trade execution logic with position management
+- Advanced trade execution logic with multiple order types
+- Automatic stop-loss and take-profit order placement
+- Position management with P&L calculations
+- Real-time analytics and performance tracking
 - Webhook signal processing capabilities
 
 ### Data Models (models.py)
-- **Trade**: Comprehensive trade tracking with enums for status and side
-- **Position**: Position management with P&L calculations
-- **BotSettings**: Centralized bot configuration storage
+- **Trade**: Comprehensive trade tracking with advanced order types and status enums
+- **Position**: Position management with P&L calculations and stop-loss/take-profit tracking
+- **BotSettings**: Centralized bot configuration with risk management settings
+- **TradingPair**: Multiple trading pairs support with specifications
+- **TradingAnalytics**: Performance metrics and trading statistics storage
 - Timestamp tracking for audit trails
 
 ### Web Interface (routes.py)
 - Dashboard with trade history and position overview
+- Analytics page with performance metrics and charts
+- Trading pairs management interface
+- Advanced settings with stop-loss/take-profit configuration
 - Webhook endpoint for TradingView integration
-- Settings management interface
 - Real-time balance and status monitoring
+- RESTful API endpoints for data management
 
 ## Data Flow
 

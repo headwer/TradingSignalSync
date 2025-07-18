@@ -1,9 +1,10 @@
 from flask import render_template, request, jsonify, flash, redirect, url_for
 from app import app, db
-from models import Trade, Position, BotSettings, OrderStatus, OrderSide
+from models import Trade, Position, BotSettings, TradingPair, TradingAnalytics, OrderStatus, OrderSide, OrderType, PositionStatus
 from trading_bot import trading_bot
 import json
 import logging
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ def index():
         recent_trades = Trade.query.order_by(Trade.created_at.desc()).limit(10).all()
         
         # Get open positions
-        open_positions = Position.query.filter_by(is_open=True).all()
+        open_positions = Position.query.filter_by(status=PositionStatus.OPEN).all()
         
         # Get account balance
         balance = trading_bot.get_account_balance()
@@ -143,6 +144,11 @@ def settings():
             settings.default_quantity = float(request.form.get('default_quantity', 0.01))
             settings.max_position_size = float(request.form.get('max_position_size', 0.1))
             settings.risk_percentage = float(request.form.get('risk_percentage', 1.0))
+            settings.stop_loss_percentage = float(request.form.get('stop_loss_percentage', 2.0))
+            settings.take_profit_percentage = float(request.form.get('take_profit_percentage', 4.0))
+            settings.enable_stop_loss = request.form.get('enable_stop_loss') == 'on'
+            settings.enable_take_profit = request.form.get('enable_take_profit') == 'on'
+            settings.allowed_symbols = request.form.get('allowed_symbols', 'ETHUSDC,BTCUSDC,ADAUSDC,SOLUSDC')
             settings.is_active = request.form.get('is_active') == 'on'
             
             db.session.commit()
@@ -182,6 +188,122 @@ def test_connection():
         
     except Exception as e:
         logger.error(f"Connection test failed: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/analytics')
+def analytics():
+    """Trading analytics page"""
+    try:
+        # Get available trading pairs
+        trading_pairs = TradingPair.query.filter_by(is_active=True).all()
+        
+        # Get analytics for all pairs
+        analytics_data = {}
+        for pair in trading_pairs:
+            analytics_data[pair.symbol] = trading_bot.calculate_analytics(pair.symbol)
+        
+        # Get overall analytics
+        overall_analytics = trading_bot.calculate_analytics()
+        
+        return render_template('analytics.html',
+                             trading_pairs=trading_pairs,
+                             analytics_data=analytics_data,
+                             overall_analytics=overall_analytics)
+    except Exception as e:
+        logger.error(f"Error loading analytics: {str(e)}")
+        flash(f"Error loading analytics: {str(e)}", 'error')
+        return redirect(url_for('index'))
+
+@app.route('/trading-pairs')
+def trading_pairs():
+    """Trading pairs management page"""
+    try:
+        pairs = TradingPair.query.all()
+        return render_template('trading_pairs.html', pairs=pairs)
+    except Exception as e:
+        logger.error(f"Error loading trading pairs: {str(e)}")
+        flash(f"Error loading trading pairs: {str(e)}", 'error')
+        return redirect(url_for('index'))
+
+@app.route('/api/trading-pairs', methods=['GET', 'POST'])
+def api_trading_pairs():
+    """API endpoint for trading pairs management"""
+    try:
+        if request.method == 'POST':
+            data = request.get_json()
+            
+            # Add new trading pair
+            pair = TradingPair(
+                symbol=data['symbol'].upper(),
+                base_asset=data['base_asset'].upper(),
+                quote_asset=data['quote_asset'].upper(),
+                min_qty=float(data.get('min_qty', 0.001)),
+                max_qty=float(data.get('max_qty', 1000.0)),
+                step_size=float(data.get('step_size', 0.001)),
+                tick_size=float(data.get('tick_size', 0.01)),
+                is_active=data.get('is_active', True)
+            )
+            
+            db.session.add(pair)
+            db.session.commit()
+            
+            return jsonify({'success': True, 'message': 'Trading pair added successfully'})
+        
+        # GET request - return all pairs
+        pairs = TradingPair.query.all()
+        pairs_data = []
+        
+        for pair in pairs:
+            pairs_data.append({
+                'id': pair.id,
+                'symbol': pair.symbol,
+                'base_asset': pair.base_asset,
+                'quote_asset': pair.quote_asset,
+                'min_qty': pair.min_qty,
+                'max_qty': pair.max_qty,
+                'step_size': pair.step_size,
+                'tick_size': pair.tick_size,
+                'is_active': pair.is_active,
+                'created_at': pair.created_at.isoformat()
+            })
+        
+        return jsonify(pairs_data)
+        
+    except Exception as e:
+        logger.error(f"Error managing trading pairs: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/<symbol>')
+def api_analytics(symbol=None):
+    """API endpoint for trading analytics"""
+    try:
+        days = request.args.get('days', 30, type=int)
+        analytics = trading_bot.calculate_analytics(symbol, days)
+        
+        if analytics:
+            return jsonify(analytics)
+        else:
+            return jsonify({'error': 'No data available for analysis'}), 404
+            
+    except Exception as e:
+        logger.error(f"Error getting analytics: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/order-types')
+def api_order_types():
+    """API endpoint to get available order types"""
+    try:
+        order_types = [
+            {'value': 'MARKET', 'label': 'Market Order'},
+            {'value': 'LIMIT', 'label': 'Limit Order'},
+            {'value': 'STOP_MARKET', 'label': 'Stop Market'},
+            {'value': 'STOP_LIMIT', 'label': 'Stop Limit'},
+            {'value': 'TAKE_PROFIT', 'label': 'Take Profit Market'},
+            {'value': 'TAKE_PROFIT_LIMIT', 'label': 'Take Profit Limit'}
+        ]
+        return jsonify(order_types)
+    except Exception as e:
+        logger.error(f"Error getting order types: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.errorhandler(404)

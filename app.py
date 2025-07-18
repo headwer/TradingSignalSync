@@ -32,6 +32,57 @@ with app.app_context():
     # Import models to ensure tables are created
     import models
     db.create_all()
+    
+    # Create default trading pairs if they don't exist
+    from models import TradingPair
+    if not TradingPair.query.first():
+        default_pairs = [
+            TradingPair(
+                symbol='ETHUSDC',
+                base_asset='ETH',
+                quote_asset='USDC',
+                min_qty=0.001,
+                max_qty=1000.0,
+                step_size=0.001,
+                tick_size=0.01,
+                is_active=True
+            ),
+            TradingPair(
+                symbol='BTCUSDC',
+                base_asset='BTC',
+                quote_asset='USDC',
+                min_qty=0.00001,
+                max_qty=100.0,
+                step_size=0.00001,
+                tick_size=0.01,
+                is_active=True
+            ),
+            TradingPair(
+                symbol='ADAUSDC',
+                base_asset='ADA',
+                quote_asset='USDC',
+                min_qty=1.0,
+                max_qty=100000.0,
+                step_size=1.0,
+                tick_size=0.0001,
+                is_active=True
+            ),
+            TradingPair(
+                symbol='SOLUSDC',
+                base_asset='SOL',
+                quote_asset='USDC',
+                min_qty=0.01,
+                max_qty=10000.0,
+                step_size=0.01,
+                tick_size=0.001,
+                is_active=True
+            )
+        ]
+        
+        for pair in default_pairs:
+            db.session.add(pair)
+        
+        db.session.commit()
 
 # Import routes
 import routes

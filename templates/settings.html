@@ -72,7 +72,7 @@
                                            value="{{ settings.default_quantity if settings else 0.01 }}" 
                                            min="0.000001">
                                     <small class="form-text text-muted">
-                                        Default trade size in ETH
+                                        Default trade size
                                     </small>
                                 </div>
                             </div>
@@ -86,7 +86,7 @@
                                            value="{{ settings.max_position_size if settings else 0.1 }}" 
                                            min="0.000001">
                                     <small class="form-text text-muted">
-                                        Maximum position size in ETH
+                                        Maximum position size
                                     </small>
                                 </div>
                             </div>
@@ -104,6 +104,71 @@
                                     </small>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Stop Loss & Take Profit Configuration -->
+                    <div class="settings-section">
+                        <h6>Stop Loss & Take Profit</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="enable_stop_loss" name="enable_stop_loss" 
+                                               {% if settings and settings.enable_stop_loss %}checked{% endif %}>
+                                        <label class="form-check-label" for="enable_stop_loss">
+                                            <i class="fas fa-stop-circle me-1"></i>Enable Stop Loss
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="stop_loss_percentage" class="form-label">Stop Loss Percentage</label>
+                                    <input type="number" step="0.1" class="form-control" id="stop_loss_percentage" 
+                                           name="stop_loss_percentage" 
+                                           value="{{ settings.stop_loss_percentage if settings else 2.0 }}" 
+                                           min="0.1" max="50">
+                                    <small class="form-text text-muted">
+                                        Stop loss trigger percentage
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="enable_take_profit" name="enable_take_profit" 
+                                               {% if settings and settings.enable_take_profit %}checked{% endif %}>
+                                        <label class="form-check-label" for="enable_take_profit">
+                                            <i class="fas fa-bullseye me-1"></i>Enable Take Profit
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="take_profit_percentage" class="form-label">Take Profit Percentage</label>
+                                    <input type="number" step="0.1" class="form-control" id="take_profit_percentage" 
+                                           name="take_profit_percentage" 
+                                           value="{{ settings.take_profit_percentage if settings else 4.0 }}" 
+                                           min="0.1" max="100">
+                                    <small class="form-text text-muted">
+                                        Take profit trigger percentage
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Allowed Trading Pairs -->
+                    <div class="settings-section">
+                        <h6>Allowed Trading Pairs</h6>
+                        <div class="mb-3">
+                            <label for="allowed_symbols" class="form-label">
+                                <i class="fas fa-coins me-1"></i>Allowed Symbols
+                            </label>
+                            <input type="text" class="form-control" id="allowed_symbols" name="allowed_symbols" 
+                                   value="{{ settings.allowed_symbols if settings else 'ETHUSDC,BTCUSDC,ADAUSDC,SOLUSDC' }}" 
+                                   placeholder="ETHUSDC,BTCUSDC,ADAUSDC,SOLUSDC">
+                            <small class="form-text text-muted">
+                                Comma-separated list of allowed trading pairs
+                            </small>
                         </div>
                     </div>
 

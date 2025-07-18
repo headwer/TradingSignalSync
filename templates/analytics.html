@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics - TradingView Binance Webhook{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>Trading Analytics
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <label for="symbolFilter" class="form-label">Filter by Symbol:</label>
+                        <select class="form-select" id="symbolFilter" onchange="filterAnalytics()">
+                            <option value="">All Pairs</option>
+                            {% for pair in trading_pairs %}
+                            <option value="{{ pair.symbol }}">{{ pair.symbol }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="periodFilter" class="form-label">Period:</label>
+                        <select class="form-select" id="periodFilter" onchange="filterAnalytics()">
+                            <option value="7">Last 7 Days</option>
+                            <option value="30" selected>Last 30 Days</option>
+                            <option value="90">Last 90 Days</option>
+                            <option value="365">Last Year</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Overall Analytics -->
+{% if overall_analytics %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        <div class="card bg-primary">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-exchange-alt fa-2x me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">Total Trades</h5>
+                        <p class="card-text">{{ overall_analytics.total_trades }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card bg-success">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-percentage fa-2x me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">Win Rate</h5>
+                        <p class="card-text">{{ "%.1f"|format(overall_analytics.win_rate) }}%</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card {% if overall_analytics.total_pnl >= 0 %}bg-success{% else %}bg-danger{% endif %}">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-dollar-sign fa-2x me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">Total PnL</h5>
+                        <p class="card-text">${{ "%.2f"|format(overall_analytics.total_pnl) }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card bg-info">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-chart-line fa-2x me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">Profit Factor</h5>
+                        <p class="card-text">{{ "%.2f"|format(overall_analytics.profit_factor) if overall_analytics.profit_factor != float('inf') else '∞' }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Performance Metrics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="text-center">
+                            <h6 class="text-success">Winning Trades</h6>
+                            <h4>{{ overall_analytics.winning_trades }}</h4>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-center">
+                            <h6 class="text-danger">Losing Trades</h6>
+                            <h4>{{ overall_analytics.losing_trades }}</h4>
+                        </div>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-6">
+                        <div class="text-center">
+                            <h6 class="text-success">Avg Win</h6>
+                            <h4>${{ "%.2f"|format(overall_analytics.avg_win) }}</h4>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-center">
+                            <h6 class="text-danger">Avg Loss</h6>
+                            <h4>${{ "%.2f"|format(overall_analytics.avg_loss) }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Volume Analysis</h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center">
+                    <h6>Total Volume Traded</h6>
+                    <h3 class="text-primary">${{ "%.2f"|format(overall_analytics.total_volume) }}</h3>
+                </div>
+                <hr>
+                <div class="text-center">
+                    <h6>Average Trade Size</h6>
+                    <h4>${{ "%.2f"|format(overall_analytics.total_volume / overall_analytics.total_trades) if overall_analytics.total_trades > 0 else 0 }}</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Per-Symbol Analytics -->
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-coins me-2"></i>Per-Symbol Analytics
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Trades</th>
+                                <th>Win Rate</th>
+                                <th>Total PnL</th>
+                                <th>Avg Win</th>
+                                <th>Avg Loss</th>
+                                <th>Profit Factor</th>
+                                <th>Volume</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for symbol, analytics in analytics_data.items() %}
+                            {% if analytics %}
+                            <tr>
+                                <td><strong>{{ symbol }}</strong></td>
+                                <td>{{ analytics.total_trades }}</td>
+                                <td>{{ "%.1f"|format(analytics.win_rate) }}%</td>
+                                <td class="{% if analytics.total_pnl >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                    ${{ "%.2f"|format(analytics.total_pnl) }}
+                                </td>
+                                <td class="text-success">${{ "%.2f"|format(analytics.avg_win) }}</td>
+                                <td class="text-danger">${{ "%.2f"|format(analytics.avg_loss) }}</td>
+                                <td>{{ "%.2f"|format(analytics.profit_factor) if analytics.profit_factor != float('inf') else '∞' }}</td>
+                                <td>${{ "%.2f"|format(analytics.total_volume) }}</td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Analytics Chart (Placeholder for future implementation) -->
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-chart-line me-2"></i>Performance Chart
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center py-4">
+                    <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">Performance charts will be available in a future update</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterAnalytics() {
+    const symbol = document.getElementById('symbolFilter').value;
+    const period = document.getElementById('periodFilter').value;
+    
+    // Reload page with filters
+    const params = new URLSearchParams();
+    if (symbol) params.append('symbol', symbol);
+    if (period) params.append('period', period);
+    
+    window.location.href = '{{ url_for("analytics") }}?' + params.toString();
+}
+</script>
+{% endblock %}

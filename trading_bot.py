@@ -2,9 +2,11 @@ import os
 import logging
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
-from models import Trade, Position, BotSettings, OrderStatus, OrderSide
+from models import Trade, Position, BotSettings, TradingPair, TradingAnalytics, OrderStatus, OrderSide, OrderType, PositionStatus
 from app import db
 import json
+from datetime import datetime, date
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -12,9 +14,15 @@ class TradingBot:
     def __init__(self):
         self.client = None
         self.settings = None
-        self.initialize_client()
-    
+        
     def initialize_client(self):
+        """Initialize Binance client with API keys"""
+        from app import app
+        
+        with app.app_context():
+            self._initialize_client_internal()
+    
+    def _initialize_client_internal(self):
         """Initialize Binance client with API keys"""
         try:
             # Get settings from database or environment
@@ -33,6 +41,9 @@ class TradingBot:
                 )
                 db.session.add(self.settings)
                 db.session.commit()
+                
+                # Initialize trading pairs
+                self._initialize_trading_pairs()
             
             if self.settings.api_key and self.settings.api_secret:
                 self.client = Client(
@@ -46,6 +57,36 @@ class TradingBot:
                 
         except Exception as e:
             logger.error(f"Failed to initialize Binance client: {str(e)}")
+    
+    def _initialize_trading_pairs(self):
+        """Initialize default trading pairs"""
+        try:
+            default_pairs = [
+                ("ETHUSDC", "ETH", "USDC"),
+                ("BTCUSDC", "BTC", "USDC"),
+                ("ADAUSDC", "ADA", "USDC"),
+                ("SOLUSDC", "SOL", "USDC"),
+                ("BNBUSDC", "BNB", "USDC"),
+                ("DOTUSDC", "DOT", "USDC"),
+                ("LINKUSDC", "LINK", "USDC"),
+                ("AVAXUSDC", "AVAX", "USDC")
+            ]
+            
+            for symbol, base, quote in default_pairs:
+                existing = TradingPair.query.filter_by(symbol=symbol).first()
+                if not existing:
+                    pair = TradingPair(
+                        symbol=symbol,
+                        base_asset=base,
+                        quote_asset=quote
+                    )
+                    db.session.add(pair)
+            
+            db.session.commit()
+            logger.info("Default trading pairs initialized")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize trading pairs: {str(e)}")
     
     def process_webhook_signal(self, signal_data):
         """Process incoming TradingView webhook signal"""
@@ -61,25 +102,46 @@ class TradingBot:
             # Parse signal data
             action = signal_data.get('action', '').upper()
             symbol = signal_data.get('symbol', 'ETHUSDC').upper()
+            order_type = signal_data.get('order_type', 'MARKET').upper()
             quantity = float(signal_data.get('quantity', self.settings.default_quantity))
+            price = signal_data.get('price')
+            stop_price = signal_data.get('stop_price')
+            stop_loss = signal_data.get('stop_loss')
+            take_profit = signal_data.get('take_profit')
             
             # Validate signal
             if action not in ['BUY', 'SELL']:
                 raise Exception(f"Invalid action: {action}")
             
+            # Validate symbol
+            if not self._is_symbol_allowed(symbol):
+                raise Exception(f"Symbol {symbol} not allowed")
+            
+            # Get trading pair info
+            trading_pair = self._get_trading_pair(symbol)
+            if not trading_pair:
+                raise Exception(f"Trading pair {symbol} not found")
+            
+            # Validate quantity
+            quantity = self._validate_quantity(quantity, trading_pair)
+            
             # Create trade record
             trade = Trade(
                 symbol=symbol,
                 side=OrderSide.BUY if action == 'BUY' else OrderSide.SELL,
+                order_type=OrderType(order_type) if order_type in [e.value for e in OrderType] else OrderType.MARKET,
                 quantity=quantity,
+                price=float(price) if price else None,
+                stop_price=float(stop_price) if stop_price else None,
                 signal_data=json.dumps(signal_data),
-                status=OrderStatus.PENDING
+                status=OrderStatus.PENDING,
+                client_order_id=str(uuid.uuid4())
             )
             db.session.add(trade)
             db.session.commit()
             
             # Execute trade
-            result = self.execute_trade(trade)
+            result = self.execute_trade(trade, stop_loss, take_profit)
             return result
             
         except Exception as e:
@@ -90,10 +152,59 @@ class TradingBot:
                 db.session.commit()
             raise
     
-    def execute_trade(self, trade):
-        """Execute trade on Binance"""
+    def _is_symbol_allowed(self, symbol):
+        """Check if symbol is allowed for trading"""
+        if not self.settings.allowed_symbols:
+            return True
+        
+        allowed_symbols = [s.strip() for s in self.settings.allowed_symbols.split(',')]
+        return symbol in allowed_symbols
+    
+    def _get_trading_pair(self, symbol):
+        """Get trading pair information"""
+        return TradingPair.query.filter_by(symbol=symbol, is_active=True).first()
+    
+    def _validate_quantity(self, quantity, trading_pair):
+        """Validate and adjust quantity based on trading pair rules"""
+        if quantity < trading_pair.min_qty:
+            quantity = trading_pair.min_qty
+        elif quantity > trading_pair.max_qty:
+            quantity = trading_pair.max_qty
+        
+        # Round to step size
+        step_size = trading_pair.step_size
+        quantity = round(quantity / step_size) * step_size
+        
+        return quantity
+    
+    def _calculate_stop_loss_price(self, entry_price, side, percentage=None):
+        """Calculate stop loss price"""
+        if percentage is None:
+            percentage = self.settings.stop_loss_percentage
+        
+        if side == OrderSide.BUY:
+            # For long positions, stop loss is below entry price
+            return entry_price * (1 - percentage / 100)
+        else:
+            # For short positions, stop loss is above entry price
+            return entry_price * (1 + percentage / 100)
+    
+    def _calculate_take_profit_price(self, entry_price, side, percentage=None):
+        """Calculate take profit price"""
+        if percentage is None:
+            percentage = self.settings.take_profit_percentage
+        
+        if side == OrderSide.BUY:
+            # For long positions, take profit is above entry price
+            return entry_price * (1 + percentage / 100)
+        else:
+            # For short positions, take profit is below entry price
+            return entry_price * (1 - percentage / 100)
+    
+    def execute_trade(self, trade, stop_loss=None, take_profit=None):
+        """Execute trade on Binance with advanced order types"""
         try:
-            logger.info(f"Executing trade: {trade.side.value} {trade.quantity} {trade.symbol}")
+            logger.info(f"Executing trade: {trade.side.value} {trade.quantity} {trade.symbol} (Type: {trade.order_type.value})")
             
             # Check if we need to close existing position first
             if trade.side == OrderSide.BUY:
@@ -101,21 +212,43 @@ class TradingBot:
             else:
                 self.close_long_positions(trade.symbol)
             
-            # Execute market order
-            order = self.client.futures_create_order(
-                symbol=trade.symbol,
-                side=trade.side.value,
-                type='MARKET',
-                quantity=trade.quantity
-            )
+            # Prepare order parameters
+            order_params = {
+                'symbol': trade.symbol,
+                'side': trade.side.value,
+                'type': trade.order_type.value,
+                'quantity': trade.quantity,
+                'newClientOrderId': trade.client_order_id
+            }
+            
+            # Add price for limit orders
+            if trade.order_type in [OrderType.LIMIT, OrderType.STOP_LIMIT, OrderType.TAKE_PROFIT_LIMIT]:
+                if not trade.price:
+                    raise Exception("Price required for limit orders")
+                order_params['price'] = trade.price
+            
+            # Add stop price for stop orders
+            if trade.order_type in [OrderType.STOP_MARKET, OrderType.STOP_LIMIT]:
+                if not trade.stop_price:
+                    raise Exception("Stop price required for stop orders")
+                order_params['stopPrice'] = trade.stop_price
+            
+            # Execute main order
+            order = self.client.futures_create_order(**order_params)
             
             # Update trade record
             trade.order_id = order['orderId']
-            trade.status = OrderStatus.FILLED
-            trade.price = float(order.get('avgPrice', 0))
+            trade.status = OrderStatus.FILLED if order['status'] == 'FILLED' else OrderStatus.PENDING
+            trade.filled_quantity = float(order.get('executedQty', 0))
+            trade.avg_price = float(order.get('avgPrice', 0)) if order.get('avgPrice') else None
             
-            # Create or update position
-            self.update_position(trade)
+            # Create or update position if filled
+            if trade.status == OrderStatus.FILLED:
+                position = self.update_position(trade)
+                
+                # Set up stop loss and take profit orders
+                if position and (self.settings.enable_stop_loss or self.settings.enable_take_profit):
+                    self._setup_stop_loss_take_profit(position, stop_loss, take_profit)
             
             db.session.commit()
             
@@ -123,6 +256,7 @@ class TradingBot:
             return {
                 'success': True,
                 'order_id': order['orderId'],
+                'status': trade.status.value,
                 'message': f"Trade executed: {trade.side.value} {trade.quantity} {trade.symbol}"
             }
             
@@ -148,7 +282,7 @@ class TradingBot:
             positions = Position.query.filter_by(
                 symbol=symbol,
                 side=OrderSide.BUY,
-                is_open=True
+                status=PositionStatus.OPEN
             ).all()
             
             for position in positions:
@@ -160,7 +294,7 @@ class TradingBot:
                     quantity=position.quantity
                 )
                 
-                position.is_open = False
+                position.status = PositionStatus.CLOSED
                 db.session.commit()
                 
                 logger.info(f"Closed long position: {position.quantity} {symbol}")
@@ -174,7 +308,7 @@ class TradingBot:
             positions = Position.query.filter_by(
                 symbol=symbol,
                 side=OrderSide.SELL,
-                is_open=True
+                status=PositionStatus.OPEN
             ).all()
             
             for position in positions:
@@ -186,7 +320,7 @@ class TradingBot:
                     quantity=position.quantity
                 )
                 
-                position.is_open = False
+                position.status = PositionStatus.CLOSED
                 db.session.commit()
                 
                 logger.info(f"Closed short position: {position.quantity} {symbol}")
@@ -209,9 +343,11 @@ class TradingBot:
             db.session.commit()
             
             logger.info(f"Position updated: {trade.side.value} {trade.quantity} {trade.symbol}")
+            return position
             
         except Exception as e:
             logger.error(f"Error updating position: {str(e)}")
+            return None
     
     def get_account_balance(self):
         """Get account balance"""
@@ -256,6 +392,175 @@ class TradingBot:
         except Exception as e:
             logger.error(f"Error getting open positions: {str(e)}")
             return []
+    
+    def _setup_stop_loss_take_profit(self, position, stop_loss=None, take_profit=None):
+        """Set up stop loss and take profit orders for a position"""
+        try:
+            entry_price = position.entry_price
+            
+            # Set up stop loss
+            if self.settings.enable_stop_loss:
+                sl_price = stop_loss if stop_loss else self._calculate_stop_loss_price(entry_price, position.side)
+                sl_order = self._create_stop_loss_order(position, sl_price)
+                if sl_order:
+                    position.stop_loss_price = sl_price
+                    position.stop_loss_order_id = sl_order['orderId']
+            
+            # Set up take profit
+            if self.settings.enable_take_profit:
+                tp_price = take_profit if take_profit else self._calculate_take_profit_price(entry_price, position.side)
+                tp_order = self._create_take_profit_order(position, tp_price)
+                if tp_order:
+                    position.take_profit_price = tp_price
+                    position.take_profit_order_id = tp_order['orderId']
+            
+            db.session.commit()
+            
+        except Exception as e:
+            logger.error(f"Failed to set up stop loss/take profit: {str(e)}")
+    
+    def _create_stop_loss_order(self, position, stop_price):
+        """Create stop loss order"""
+        try:
+            # Opposite side for closing position
+            side = 'SELL' if position.side == OrderSide.BUY else 'BUY'
+            
+            order = self.client.futures_create_order(
+                symbol=position.symbol,
+                side=side,
+                type='STOP_MARKET',
+                quantity=position.quantity,
+                stopPrice=stop_price,
+                newClientOrderId=f"SL_{position.id}_{str(uuid.uuid4())[:8]}"
+            )
+            
+            logger.info(f"Stop loss order created: {order['orderId']} at {stop_price}")
+            return order
+            
+        except Exception as e:
+            logger.error(f"Failed to create stop loss order: {str(e)}")
+            return None
+    
+    def _create_take_profit_order(self, position, take_profit_price):
+        """Create take profit order"""
+        try:
+            # Opposite side for closing position
+            side = 'SELL' if position.side == OrderSide.BUY else 'BUY'
+            
+            order = self.client.futures_create_order(
+                symbol=position.symbol,
+                side=side,
+                type='TAKE_PROFIT_MARKET',
+                quantity=position.quantity,
+                stopPrice=take_profit_price,
+                newClientOrderId=f"TP_{position.id}_{str(uuid.uuid4())[:8]}"
+            )
+            
+            logger.info(f"Take profit order created: {order['orderId']} at {take_profit_price}")
+            return order
+            
+        except Exception as e:
+            logger.error(f"Failed to create take profit order: {str(e)}")
+            return None
+    
+    def calculate_analytics(self, symbol=None, days=30):
+        """Calculate trading analytics"""
+        try:
+            from datetime import datetime, timedelta
+            
+            # Get trades for analysis
+            query = Trade.query.filter(Trade.status == OrderStatus.FILLED)
+            if symbol:
+                query = query.filter(Trade.symbol == symbol)
+            
+            trades = query.filter(
+                Trade.created_at >= datetime.utcnow() - timedelta(days=days)
+            ).all()
+            
+            if not trades:
+                return None
+            
+            # Calculate metrics
+            total_trades = len(trades)
+            winning_trades = 0
+            losing_trades = 0
+            total_pnl = 0
+            total_volume = 0
+            wins = []
+            losses = []
+            
+            for trade in trades:
+                # Get position for this trade
+                position = Position.query.filter_by(
+                    symbol=trade.symbol,
+                    created_at=trade.created_at
+                ).first()
+                
+                if position:
+                    pnl = position.realized_pnl
+                    total_pnl += pnl
+                    total_volume += trade.quantity * (trade.avg_price or trade.price or 0)
+                    
+                    if pnl > 0:
+                        winning_trades += 1
+                        wins.append(pnl)
+                    else:
+                        losing_trades += 1
+                        losses.append(abs(pnl))
+            
+            # Calculate derived metrics
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            avg_win = sum(wins) / len(wins) if wins else 0
+            avg_loss = sum(losses) / len(losses) if losses else 0
+            profit_factor = (sum(wins) / sum(losses)) if losses else float('inf')
+            
+            return {
+                'total_trades': total_trades,
+                'winning_trades': winning_trades,
+                'losing_trades': losing_trades,
+                'win_rate': win_rate,
+                'total_pnl': total_pnl,
+                'total_volume': total_volume,
+                'avg_win': avg_win,
+                'avg_loss': avg_loss,
+                'profit_factor': profit_factor
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating analytics: {str(e)}")
+            return None
+    
+    def _calculate_stop_loss_price(self, entry_price, side):
+        """Calculate stop loss price based on entry price and side"""
+        try:
+            percentage = self.settings.stop_loss_percentage / 100
+            
+            if side == OrderSide.BUY:
+                # For long positions, stop loss is below entry price
+                return entry_price * (1 - percentage)
+            else:
+                # For short positions, stop loss is above entry price
+                return entry_price * (1 + percentage)
+                
+        except Exception as e:
+            logger.error(f"Error calculating stop loss price: {str(e)}")
+            return None
+    
+    def _calculate_take_profit_price(self, entry_price, side):
+        """Calculate take profit price based on entry price and side"""
+        try:
+            percentage = self.settings.take_profit_percentage / 100
+            
+            if side == OrderSide.BUY:
+                # For long positions, take profit is above entry price
+                return entry_price * (1 + percentage)
+            else:
+                # For short positions, take profit is below entry price
+                return entry_price * (1 - percentage)
+                
+        except Exception as e:
+            logger.error(f"Error calculating take profit price: {str(e)}")
+            return None
 
 # Global bot instance
 trading_bot = TradingBot()

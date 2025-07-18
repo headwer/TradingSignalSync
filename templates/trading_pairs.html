@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+
+{% block title %}Trading Pairs - TradingView Binance Webhook{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-coins me-2"></i>Trading Pairs Management
+                </h5>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPairModal">
+                    <i class="fas fa-plus me-2"></i>Add New Pair
+                </button>
+            </div>
+            <div class="card-body">
+                {% if pairs %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Base Asset</th>
+                                <th>Quote Asset</th>
+                                <th>Min Quantity</th>
+                                <th>Max Quantity</th>
+                                <th>Step Size</th>
+                                <th>Tick Size</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pair in pairs %}
+                            <tr>
+                                <td><strong>{{ pair.symbol }}</strong></td>
+                                <td>{{ pair.base_asset }}</td>
+                                <td>{{ pair.quote_asset }}</td>
+                                <td>{{ pair.min_qty }}</td>
+                                <td>{{ pair.max_qty }}</td>
+                                <td>{{ pair.step_size }}</td>
+                                <td>{{ pair.tick_size }}</td>
+                                <td>
+                                    {% if pair.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Inactive</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ pair.created_at.strftime('%Y-%m-%d') }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="editPair({{ pair.id }})">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deletePair({{ pair.id }})">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-coins fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">No trading pairs configured</p>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPairModal">
+                        <i class="fas fa-plus me-2"></i>Add First Trading Pair
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Pair Modal -->
+<div class="modal fade" id="addPairModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Trading Pair</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addPairForm">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="symbol" class="form-label">Symbol</label>
+                                <input type="text" class="form-control" id="symbol" name="symbol" 
+                                       placeholder="e.g., ETHUSDC" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="base_asset" class="form-label">Base Asset</label>
+                                <input type="text" class="form-control" id="base_asset" name="base_asset" 
+                                       placeholder="e.g., ETH" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="quote_asset" class="form-label">Quote Asset</label>
+                                <input type="text" class="form-control" id="quote_asset" name="quote_asset" 
+                                       placeholder="e.g., USDC" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="min_qty" class="form-label">Min Quantity</label>
+                                <input type="number" step="0.000001" class="form-control" id="min_qty" name="min_qty" 
+                                       value="0.001" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="max_qty" class="form-label">Max Quantity</label>
+                                <input type="number" step="0.000001" class="form-control" id="max_qty" name="max_qty" 
+                                       value="1000" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="step_size" class="form-label">Step Size</label>
+                                <input type="number" step="0.000001" class="form-control" id="step_size" name="step_size" 
+                                       value="0.001" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="tick_size" class="form-label">Tick Size</label>
+                                <input type="number" step="0.000001" class="form-control" id="tick_size" name="tick_size" 
+                                       value="0.01" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <div class="form-check mt-4">
+                                    <input class="form-check-input" type="checkbox" id="is_active" name="is_active" checked>
+                                    <label class="form-check-label" for="is_active">
+                                        Active
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="savePair()">Save Pair</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Information Card -->
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Trading Pair Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Parameter Definitions:</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>Symbol:</strong> Trading pair symbol (e.g., ETHUSDC)</li>
+                            <li><strong>Base Asset:</strong> The asset being traded (e.g., ETH)</li>
+                            <li><strong>Quote Asset:</strong> The asset used for pricing (e.g., USDC)</li>
+                            <li><strong>Min Quantity:</strong> Minimum order quantity</li>
+                            <li><strong>Max Quantity:</strong> Maximum order quantity</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Trading Rules:</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>Step Size:</strong> Minimum quantity increment</li>
+                            <li><strong>Tick Size:</strong> Minimum price increment</li>
+                            <li><strong>Status:</strong> Whether the pair is active for trading</li>
+                        </ul>
+                        <div class="alert alert-info mt-3">
+                            <i class="fas fa-lightbulb me-2"></i>
+                            <strong>Tip:</strong> These parameters should match Binance's trading rules for each pair.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function savePair() {
+    const form = document.getElementById('addPairForm');
+    const formData = new FormData(form);
+    
+    const data = {
+        symbol: formData.get('symbol'),
+        base_asset: formData.get('base_asset'),
+        quote_asset: formData.get('quote_asset'),
+        min_qty: formData.get('min_qty'),
+        max_qty: formData.get('max_qty'),
+        step_size: formData.get('step_size'),
+        tick_size: formData.get('tick_size'),
+        is_active: formData.get('is_active') === 'on'
+    };
+    
+    fetch('/api/trading-pairs', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Trading pair added successfully!', 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        } else {
+            showNotification('Error: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Failed to add trading pair', 'error');
+    });
+}
+
+function editPair(id) {
+    // Placeholder for edit functionality
+    showNotification('Edit functionality coming soon', 'info');
+}
+
+function deletePair(id) {
+    if (confirm('Are you sure you want to delete this trading pair?')) {
+        // Placeholder for delete functionality
+        showNotification('Delete functionality coming soon', 'info');
+    }
+}
+
+function showNotification(message, type = 'info') {
+    const alertClass = type === 'success' ? 'alert-success' : 
+                      type === 'error' ? 'alert-danger' : 'alert-info';
+    
+    const alertHTML = `
+        <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    const mainContent = document.querySelector('main .container');
+    if (mainContent) {
+        mainContent.insertAdjacentHTML('afterbegin', alertHTML);
+        
+        setTimeout(() => {
+            const alert = mainContent.querySelector('.alert');
+            if (alert) {
+                const bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            }
+        }, 5000);
+    }
+}
+</script>
+{% endblock %}
