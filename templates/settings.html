@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - TradingView Binance Webhook{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-cog me-2"></i>Bot Settings
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('settings') }}">
+                    <!-- API Configuration -->
+                    <div class="settings-section">
+                        <h6>API Configuration</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="api_key" class="form-label">
+                                        <i class="fas fa-key me-1"></i>API Key
+                                    </label>
+                                    <input type="password" class="form-control" id="api_key" name="api_key" 
+                                           value="{{ settings.api_key if settings else '' }}" 
+                                           placeholder="Enter your Binance API Key">
+                                    <small class="form-text text-muted">
+                                        Your Binance API key for futures trading
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="api_secret" class="form-label">
+                                        <i class="fas fa-lock me-1"></i>API Secret
+                                    </label>
+                                    <input type="password" class="form-control" id="api_secret" name="api_secret" 
+                                           value="{{ settings.api_secret if settings else '' }}" 
+                                           placeholder="Enter your Binance API Secret">
+                                    <small class="form-text text-muted">
+                                        Your Binance API secret key
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="testnet" name="testnet" 
+                                       {% if settings and settings.testnet %}checked{% endif %}>
+                                <label class="form-check-label" for="testnet">
+                                    <i class="fas fa-flask me-1"></i>Use Testnet
+                                </label>
+                                <small class="form-text text-muted d-block">
+                                    Enable this for testing with Binance Testnet (recommended for initial setup)
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trading Configuration -->
+                    <div class="settings-section">
+                        <h6>Trading Configuration</h6>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="default_quantity" class="form-label">
+                                        <i class="fas fa-balance-scale me-1"></i>Default Quantity
+                                    </label>
+                                    <input type="number" step="0.000001" class="form-control" id="default_quantity" 
+                                           name="default_quantity" 
+                                           value="{{ settings.default_quantity if settings else 0.01 }}" 
+                                           min="0.000001">
+                                    <small class="form-text text-muted">
+                                        Default trade size in ETH
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="max_position_size" class="form-label">
+                                        <i class="fas fa-chart-line me-1"></i>Max Position Size
+                                    </label>
+                                    <input type="number" step="0.000001" class="form-control" id="max_position_size" 
+                                           name="max_position_size" 
+                                           value="{{ settings.max_position_size if settings else 0.1 }}" 
+                                           min="0.000001">
+                                    <small class="form-text text-muted">
+                                        Maximum position size in ETH
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="risk_percentage" class="form-label">
+                                        <i class="fas fa-shield-alt me-1"></i>Risk Percentage
+                                    </label>
+                                    <input type="number" step="0.1" class="form-control" id="risk_percentage" 
+                                           name="risk_percentage" 
+                                           value="{{ settings.risk_percentage if settings else 1.0 }}" 
+                                           min="0.1" max="100">
+                                    <small class="form-text text-muted">
+                                        Risk per trade (% of balance)
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bot Status -->
+                    <div class="settings-section">
+                        <h6>Bot Status</h6>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="is_active" name="is_active" 
+                                       {% if settings and settings.is_active %}checked{% endif %}>
+                                <label class="form-check-label" for="is_active">
+                                    <i class="fas fa-power-off me-1"></i>Enable Trading Bot
+                                </label>
+                                <small class="form-text text-muted d-block">
+                                    When enabled, the bot will execute trades from TradingView signals
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Save Button -->
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>Save Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <!-- Connection Status -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-link me-2"></i>Connection Status
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="connection-status disconnected mb-3">
+                    <i class="fas fa-times-circle"></i>
+                    Checking connection...
+                </div>
+                <div class="d-grid">
+                    <button class="btn btn-outline-primary" onclick="testConnection()">
+                        <i class="fas fa-plug me-2"></i>Test Connection
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Important Information -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Important Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Security Notice:</strong> Never share your API keys with anyone. 
+                    Store them securely and use IP restrictions on Binance.
+                </div>
+                
+                <div class="alert alert-info" role="alert">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    <strong>Testnet Mode:</strong> Use testnet for testing your strategies 
+                    before using real funds.
+                </div>
+                
+                <h6 class="mt-4">Required API Permissions:</h6>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success me-2"></i>Futures Trading</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Read Account Information</li>
+                    <li><i class="fas fa-times text-danger me-2"></i>Withdraw (NOT required)</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Check connection on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        checkConnectionStatus();
+    });
+</script>
+{% endblock %}

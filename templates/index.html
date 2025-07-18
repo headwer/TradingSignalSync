@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - TradingView Binance Webhook{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Status Cards -->
+    <div class="col-md-3 mb-4">
+        <div class="card bg-primary">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-robot fa-2x me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">Bot Status</h5>
+                        <p class="card-text">
+                            {% if settings and settings.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-danger">Inactive</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-4">
+        <div class="card bg-info">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-wallet fa-2x me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">Balance</h5>
+                        <p class="card-text">
+                            {% if balance %}
+                                ${{ "%.2f"|format(balance.available_balance) }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-4">
+        <div class="card bg-success">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-chart-line fa-2x me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">Open Positions</h5>
+                        <p class="card-text">{{ positions|length }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-4">
+        <div class="card bg-warning">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-exchange-alt fa-2x me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">Total Trades</h5>
+                        <p class="card-text">{{ trades|length }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Webhook URL Info -->
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-link me-2"></i>Webhook Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <label class="form-label">TradingView Webhook URL:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="webhookUrl" 
+                                   value="{{ request.host_url }}webhook" readonly>
+                            <button class="btn btn-outline-secondary" type="button" onclick="copyWebhookUrl()">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                        <small class="form-text text-muted">
+                            Use this URL in your TradingView alerts webhook configuration.
+                        </small>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Expected JSON Format:</label>
+                        <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#jsonFormatModal">
+                            <i class="fas fa-info-circle me-1"></i>View Format
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Account Balance -->
+{% if balance %}
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-wallet me-2"></i>Account Balance
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="text-center">
+                            <h6>Total Wallet Balance</h6>
+                            <h4 class="text-primary">${{ "%.2f"|format(balance.total_wallet_balance) }}</h4>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-center">
+                            <h6>Available Balance</h6>
+                            <h4 class="text-success">${{ "%.2f"|format(balance.available_balance) }}</h4>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-center">
+                            <h6>Unrealized PNL</h6>
+                            <h4 class="{% if balance.total_unrealized_pnl >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                ${{ "%.2f"|format(balance.total_unrealized_pnl) }}
+                            </h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Open Positions -->
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-chart-line me-2"></i>Open Positions
+                </h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshPositions()">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="positionsTable">
+                    {% if positions %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Symbol</th>
+                                        <th>Side</th>
+                                        <th>Quantity</th>
+                                        <th>Entry Price</th>
+                                        <th>Current Price</th>
+                                        <th>PNL</th>
+                                        <th>Created</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for position in positions %}
+                                    <tr>
+                                        <td>{{ position.symbol }}</td>
+                                        <td>
+                                            <span class="badge {% if position.side.value == 'BUY' %}bg-success{% else %}bg-danger{% endif %}">
+                                                {{ position.side.value }}
+                                            </span>
+                                        </td>
+                                        <td>{{ "%.6f"|format(position.quantity) }}</td>
+                                        <td>${{ "%.2f"|format(position.entry_price) if position.entry_price else 'N/A' }}</td>
+                                        <td>${{ "%.2f"|format(position.current_price) if position.current_price else 'N/A' }}</td>
+                                        <td class="{% if position.pnl >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                            ${{ "%.2f"|format(position.pnl) }}
+                                        </td>
+                                        <td>{{ position.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">No open positions</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Trades -->
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-history me-2"></i>Recent Trades
+                </h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshTrades()">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="tradesTable">
+                    {% if trades %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Symbol</th>
+                                        <th>Side</th>
+                                        <th>Quantity</th>
+                                        <th>Price</th>
+                                        <th>Status</th>
+                                        <th>Created</th>
+                                        <th>Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for trade in trades %}
+                                    <tr>
+                                        <td>{{ trade.symbol }}</td>
+                                        <td>
+                                            <span class="badge {% if trade.side.value == 'BUY' %}bg-success{% else %}bg-danger{% endif %}">
+                                                {{ trade.side.value }}
+                                            </span>
+                                        </td>
+                                        <td>{{ "%.6f"|format(trade.quantity) }}</td>
+                                        <td>${{ "%.2f"|format(trade.price) if trade.price else 'N/A' }}</td>
+                                        <td>
+                                            {% if trade.status.value == 'FILLED' %}
+                                                <span class="badge bg-success">{{ trade.status.value }}</span>
+                                            {% elif trade.status.value == 'FAILED' %}
+                                                <span class="badge bg-danger">{{ trade.status.value }}</span>
+                                            {% else %}
+                                                <span class="badge bg-warning">{{ trade.status.value }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ trade.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                        <td>
+                                            {% if trade.error_message %}
+                                                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" 
+                                                        title="{{ trade.error_message }}">
+                                                    <i class="fas fa-exclamation-triangle"></i>
+                                                </button>
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-history fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">No trades yet</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JSON Format Modal -->
+<div class="modal fade" id="jsonFormatModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">TradingView Webhook JSON Format</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Use this JSON format in your TradingView alerts:</p>
+                <pre class="bg-dark text-light p-3 rounded"><code>{
+    "action": "BUY",
+    "symbol": "ETHUSDC",
+    "quantity": 0.01,
+    "price": "2500.00",
+    "message": "TradingView Alert"
+}</code></pre>
+                <div class="mt-3">
+                    <strong>Parameters:</strong>
+                    <ul class="mt-2">
+                        <li><code>action</code>: "BUY" or "SELL"</li>
+                        <li><code>symbol</code>: Trading pair (default: ETHUSDC)</li>
+                        <li><code>quantity</code>: Trade size (optional, uses default from settings)</li>
+                        <li><code>price</code>: Current price (for reference)</li>
+                        <li><code>message</code>: Optional message</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Auto-refresh data every 30 seconds
+    setInterval(function() {
+        refreshTrades();
+        refreshPositions();
+    }, 30000);
+
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+</script>
+{% endblock %}
