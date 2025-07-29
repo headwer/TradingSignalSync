@@ -1,7 +1,7 @@
+ccxt
 flask==3.1.1
 flask_sqlalchemy==3.1.1
 python-binance==1.0.29
-ccxt==1.109.96
 requests==2.32.4
 python-dotenv==1.1.1
 streamlit==1.24.1
